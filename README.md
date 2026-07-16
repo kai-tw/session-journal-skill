@@ -21,6 +21,26 @@ The root cause is an **asymmetry**: reading state can be made deterministic (a h
 
 ## How it works
 
+```mermaid
+flowchart LR
+    A["<b>SessionStart</b><br/>start · resume · clear · compact"]
+    B["<b>mid-session action</b><br/>worktree · PR · git push -u"]
+    C["<b>SessionEnd</b><br/>clear · logout"]
+
+    subgraph store["docs/session-journal/ · gitignored, local-only"]
+      direction TB
+      IDX["<b>_active.md</b> — cross-session index<br/>every open thread; read by EVERY session"]
+      DET["<b>&lt;session-id&gt;/_detail.md</b> — this session<br/>threads + compression; survives compaction &amp; --resume"]
+    end
+
+    A -->|"inject.sh · read &amp; inject into context"| IDX
+    A -.->|also injected| DET
+    B -->|"nudge.sh · remind you to record where it lives"| DET
+    C -->|"cleanup.sh · trash detail unless still linked · + gc"| DET
+```
+
+*Reading is deterministic (a hook injects state every session); writing is nudged at the moments that matter. That symmetry is the whole idea.*
+
 **Two tiers of plain-Markdown state under `docs/session-journal/` (gitignored):**
 
 | File | Scope | Survives |
