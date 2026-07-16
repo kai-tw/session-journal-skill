@@ -58,21 +58,33 @@ Everything mechanical lives in one script, `journal.sh` (init / inject / cleanup
 
 ## Install
 
+The skill is self-contained — `SKILL.md`, `scripts/`, and `hooks/` all live under one directory, which lands at `<project>/.claude/skills/session-journal/`. Pick whichever adoption method you prefer; both produce the same layout.
+
+### Method 1 — `install.sh` (copy)
+
 ```bash
 git clone https://github.com/kai-tw/session-journal-skill.git
 cd session-journal-skill
 ./install.sh /path/to/your/project      # omit the path to install into the current dir
 ```
 
-The installer:
-1. copies the skill → `<project>/.claude/skills/session-journal/`
-2. copies the three hooks → `<project>/.claude/hooks/`
-3. **non-destructively merges** the hook registrations into `<project>/.claude/settings.json` (existing hooks are preserved; re-running is idempotent)
-4. adds `docs/session-journal/` to `<project>/.gitignore`
+The installer (1) copies the skill + bundled hooks → `<project>/.claude/skills/session-journal/`, (2) **non-destructively merges** the three hook registrations into `<project>/.claude/settings.json` (existing hooks preserved; re-running is idempotent), and (3) adds `docs/session-journal/` to `<project>/.gitignore`.
+
+### Method 2 — git submodule (track upstream)
+
+Mount this repo directly at the skill path, so the project pins a commit and pulls fixes with `git submodule update --remote`:
+
+```bash
+cd /path/to/your/project
+git submodule add https://github.com/kai-tw/session-journal-skill .claude/skills/session-journal
+.claude/skills/session-journal/install.sh --settings-only
+```
+
+A submodule brings **files only** — it cannot touch your `settings.json`. So `--settings-only` does steps (2) and (3) above (merge the hook registrations + gitignore) without copying anything.
 
 Then restart your agent session so the `SessionStart` hook fires. **Requirements:** `bash`, `jq`, `git`. Tested on macOS and Linux.
 
-> Prefer to wire it by hand? The payload is a literal drop-in `.claude/` tree — copy the files and add the three hook entries from [`install.sh`](install.sh) to your `settings.json` yourself.
+> Prefer to wire it by hand? Copy the directory to `.claude/skills/session-journal/` and add the three hook entries (they point at `.claude/skills/session-journal/hooks/…`) from [`install.sh`](install.sh) to your `settings.json` yourself.
 
 ### Windows
 
@@ -89,7 +101,7 @@ Only native Windows with **no** Git Bash installed is unsupported — Claude Cod
 ./uninstall.sh /path/to/your/project
 ```
 
-Removes the skill + hooks and strips the hook registrations from `settings.json`. It **does not** delete your `docs/session-journal/` contents — remove those yourself if you want them gone.
+Removes the skill dir and strips the hook registrations from `settings.json`. If you added it as a submodule, `uninstall.sh` leaves the files in place and prints the `git submodule deinit` command to run instead. Either way it **does not** delete your `docs/session-journal/` contents — remove those yourself if you want them gone.
 
 ## What it is *not*
 
@@ -103,16 +115,21 @@ The journal is **local-only and gitignored** — the installer adds the ignore r
 
 ## Layout
 
+The repo root **is** the skill — so it maps 1:1 onto `.claude/skills/session-journal/` in a consuming project (which is what makes the git-submodule method clean):
+
 ```
-.claude/
-├── skills/session-journal/
-│   ├── SKILL.md                     # the skill contract (when/how to write)
-│   └── scripts/journal.sh           # all mechanical ops (init/inject/cleanup/gc/list)
-└── hooks/
-    ├── session-journal-inject.sh    # SessionStart  → inject index + detail
-    ├── session-journal-cleanup.sh   # SessionEnd    → trash detail on terminal end
-    └── session-journal-nudge.sh     # PostToolUse   → nudge to record where a thread lives
+session-journal-skill/               →  <project>/.claude/skills/session-journal/
+├── SKILL.md                     # the skill contract (when/how to write)
+├── scripts/journal.sh           # all mechanical ops (init/inject/cleanup/gc/list)
+├── hooks/
+│   ├── session-journal-inject.sh    # SessionStart  → inject index + detail
+│   ├── session-journal-cleanup.sh   # SessionEnd    → trash detail on terminal end
+│   └── session-journal-nudge.sh     # PostToolUse   → nudge to record where a thread lives
+├── install.sh · uninstall.sh    # adoption helpers (not needed for submodule files)
+├── README.md · LICENSE
 ```
+
+The hooks live **inside** the skill dir, so `settings.json` references them as `.claude/skills/session-journal/hooks/…` and the whole skill is one self-contained, submodule-mountable unit.
 
 ## License
 

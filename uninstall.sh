@@ -1,24 +1,30 @@
 #!/usr/bin/env bash
-# uninstall.sh — remove the session-journal skill + hooks from a target project.
-#
-# Removes the skill dir + the three hook scripts and strips their registrations
-# from <target>/.claude/settings.json. Does NOT delete docs/session-journal/
+# uninstall.sh — remove the session-journal skill from a project and strip its
+# hook registrations from settings.json. Does NOT delete docs/session-journal/
 # (your working state) or the .gitignore line — remove those by hand if you want.
+#
+# If the skill was added as a git SUBMODULE, this only strips settings and tells
+# you to run `git submodule deinit` yourself (removing a submodule's files by
+# hand corrupts .git/modules state).
 #
 # Usage: ./uninstall.sh [TARGET_DIR]   # default: current directory
 set -euo pipefail
 
 TARGET="$(cd "${1:-$PWD}" && pwd)"
-ok() { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
+warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 
 printf '\nRemoving session-journal from %s\n\n' "$TARGET"
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required"; exit 1; }
 
-rm -rf "$TARGET/.claude/skills/session-journal"
-rm -f  "$TARGET/.claude/hooks/session-journal-inject.sh" \
-       "$TARGET/.claude/hooks/session-journal-cleanup.sh" \
-       "$TARGET/.claude/hooks/session-journal-nudge.sh"
-ok "removed skill + hook scripts"
+SKILLDIR="$TARGET/.claude/skills/session-journal"
+if [ -e "$SKILLDIR/.git" ]; then
+  warn "skill is a git submodule — leaving files in place. Remove it with:"
+  warn "    git submodule deinit -f .claude/skills/session-journal && git rm -f .claude/skills/session-journal"
+elif [ -d "$SKILLDIR" ]; then
+  rm -rf "$SKILLDIR"
+  ok "removed .claude/skills/session-journal/"
+fi
 
 SETTINGS="$TARGET/.claude/settings.json"
 if [ -f "$SETTINGS" ]; then
@@ -30,7 +36,6 @@ if [ -f "$SETTINGS" ]; then
       end;
     if .hooks == null then .
     else strip("SessionStart") | strip("SessionEnd") | strip("PostToolUse")
-       # drop now-empty event arrays
        | .hooks |= with_entries(select(.value | length > 0))
     end
   ' "$SETTINGS" > "$SETTINGS.tmp" && mv "$SETTINGS.tmp" "$SETTINGS"

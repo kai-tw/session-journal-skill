@@ -23,6 +23,6 @@ agent_type=$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)
 sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
 reason=$(printf '%s' "$input" | jq -r '.reason // empty' 2>/dev/null)
 
-script="$(dirname "$0")/../skills/session-journal/scripts/journal.sh"
+script="$(dirname "$0")/../scripts/journal.sh"
 [ -x "$script" ] && bash "$script" cleanup "$sid" "$reason" >/dev/null 2>&1
 exit 0

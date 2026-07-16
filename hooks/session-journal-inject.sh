@@ -23,16 +23,17 @@ agent_type=$(printf '%s' "$input" | jq -r '.agent_type // empty' 2>/dev/null)
 
 sid=$(printf '%s' "$input" | jq -r '.session_id // empty' 2>/dev/null)
 
-script="$(dirname "$0")/../skills/session-journal/scripts/journal.sh"
+script="$(dirname "$0")/../scripts/journal.sh"
 body=""
 if [ -x "$script" ]; then
   # Self-maintain: trash stale orphan detail files (default 14d, chain-aware).
   # Passing $sid keeps the current session exempt even on a fresh startup.
   bash "$script" gc "" "$sid" >/dev/null 2>&1
-  # This tree's branch (anchored to the hook's own location, so a worktree
-  # session reports its worktree branch) lets inject auto-identify which thread
-  # this tree is — so a /clear'd worktree session resumes the right one.
-  branch="$(git -C "$(dirname "$0")" branch --show-current 2>/dev/null || true)"
+  # The project's current branch (resolved from the hook's cwd = the project
+  # root, NOT the script's own dir — so this is correct whether the skill was
+  # copied in or mounted as a git submodule) lets inject auto-identify which
+  # thread this tree is, so a /clear'd worktree session resumes the right one.
+  branch="$(git branch --show-current 2>/dev/null || true)"
   body="$(bash "$script" inject "$sid" "$branch" 2>/dev/null)"
 fi
 

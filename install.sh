@@ -1,50 +1,64 @@
 #!/usr/bin/env bash
-# install.sh — drop the session-journal skill + its hooks into a target project.
+# install.sh — install the session-journal skill (+ its bundled hooks) into a
+# project, and wire the three hook registrations into its settings.json.
 #
-# Copies the skill and the three hook scripts into <target>/.claude/, then
-# NON-DESTRUCTIVELY merges the three hook registrations into
-# <target>/.claude/settings.json (SessionStart / SessionEnd / PostToolUse) and
-# adds docs/session-journal/ to <target>/.gitignore. Idempotent: re-running skips
-# anything already installed.
+# The skill is self-contained: SKILL.md, scripts/journal.sh and hooks/ all live
+# under one directory, so in the target everything lands at
+#   <target>/.claude/skills/session-journal/
+# and the hooks are referenced from there. This is the SAME layout you get by
+# mounting this repo as a git submodule at that path (see README), so the two
+# adoption methods are interchangeable.
 #
 # Usage:
-#   ./install.sh [TARGET_DIR]      # default: current directory
+#   ./install.sh [TARGET_DIR]                  # copy files + merge settings + gitignore
+#   ./install.sh --settings-only [TARGET_DIR]  # only merge settings + gitignore
+#                                              # (for submodule users — files are
+#                                              #  already present via the submodule)
+#   TARGET_DIR defaults to the current directory.
 #
-# Requirements: bash, jq, git (target should be a git repo — the journal anchors
-# its storage to the git root).
+# Requirements: bash, jq, git (the journal anchors its storage to the git root).
 set -euo pipefail
+
+SETTINGS_ONLY=0
+if [ "${1:-}" = "--settings-only" ]; then SETTINGS_ONLY=1; shift; fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TARGET="$(cd "${1:-$PWD}" && pwd)"
 
-say()  { printf '  %s\n' "$*"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn() { printf '  \033[33m!\033[0m %s\n' "$*"; }
 
 printf '\nInstalling session-journal → %s\n\n' "$TARGET"
 
 command -v jq >/dev/null 2>&1 || { echo "ERROR: jq is required (brew install jq / apt install jq)"; exit 1; }
-[ -f "$SCRIPT_DIR/.claude/skills/session-journal/SKILL.md" ] || { echo "ERROR: run this from the cloned repo (payload .claude/ not found next to install.sh)"; exit 1; }
+[ -f "$SCRIPT_DIR/SKILL.md" ] || { echo "ERROR: run this from the skill root (SKILL.md not found next to install.sh)"; exit 1; }
 git -C "$TARGET" rev-parse --git-dir >/dev/null 2>&1 || warn "target is not a git repo — the journal anchors to the git root, so initialise one (git init) before real use."
 
-# 1) copy skill + hooks -------------------------------------------------------
-mkdir -p "$TARGET/.claude/skills" "$TARGET/.claude/hooks"
-cp -R "$SCRIPT_DIR/.claude/skills/session-journal" "$TARGET/.claude/skills/"
-cp "$SCRIPT_DIR/.claude/hooks/session-journal-inject.sh"  "$TARGET/.claude/hooks/"
-cp "$SCRIPT_DIR/.claude/hooks/session-journal-cleanup.sh" "$TARGET/.claude/hooks/"
-cp "$SCRIPT_DIR/.claude/hooks/session-journal-nudge.sh"   "$TARGET/.claude/hooks/"
-chmod +x "$TARGET/.claude/skills/session-journal/scripts/journal.sh" "$TARGET/.claude/hooks/session-journal-"*.sh
-ok "copied skill → .claude/skills/session-journal/"
-ok "copied hooks → .claude/hooks/session-journal-{inject,cleanup,nudge}.sh"
+SKILLDIR="$TARGET/.claude/skills/session-journal"
+
+# 1) copy skill + bundled hooks (skipped in --settings-only) ------------------
+if [ "$SETTINGS_ONLY" -eq 0 ]; then
+  mkdir -p "$SKILLDIR/scripts" "$SKILLDIR/hooks"
+  cp "$SCRIPT_DIR/SKILL.md"            "$SKILLDIR/SKILL.md"
+  cp "$SCRIPT_DIR/scripts/journal.sh"  "$SKILLDIR/scripts/journal.sh"
+  cp "$SCRIPT_DIR/hooks/"session-journal-*.sh "$SKILLDIR/hooks/"
+  chmod +x "$SKILLDIR/scripts/journal.sh" "$SKILLDIR/hooks/"session-journal-*.sh
+  ok "installed skill + hooks → .claude/skills/session-journal/"
+else
+  [ -f "$SKILLDIR/SKILL.md" ] || warn "no skill found at .claude/skills/session-journal/ — add the submodule there first, then re-run --settings-only."
+  ok "--settings-only: skipped file copy"
+fi
 
 # 2) merge hook registrations into settings.json (non-destructive) ------------
 SETTINGS="$TARGET/.claude/settings.json"
+mkdir -p "$TARGET/.claude"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 jq empty "$SETTINGS" 2>/dev/null || { echo "ERROR: $SETTINGS is not valid JSON — fix it, then re-run."; exit 1; }
 
-INJ='"$CLAUDE_PROJECT_DIR/.claude/hooks/session-journal-inject.sh"'
-CLN='"$CLAUDE_PROJECT_DIR/.claude/hooks/session-journal-cleanup.sh"'
-NDG='"$CLAUDE_PROJECT_DIR/.claude/hooks/session-journal-nudge.sh"'
+H='"$CLAUDE_PROJECT_DIR/.claude/skills/session-journal/hooks'
+INJ="$H/session-journal-inject.sh\""
+CLN="$H/session-journal-cleanup.sh\""
+NDG="$H/session-journal-nudge.sh\""
 
 merged="$(jq \
   --arg inj "$INJ" --arg cln "$CLN" --arg ndg "$NDG" '
@@ -73,8 +87,7 @@ fi
 cat <<EOF
 
 Done. Next:
-  • Restart your agent session (or start a new one) so the SessionStart hook fires
-    and the skill is picked up.
+  • Restart your agent session (or start a new one) so the SessionStart hook fires.
   • The journal lives in docs/session-journal/ (gitignored). Inspect it with:
       .claude/skills/session-journal/scripts/journal.sh list
   • Read the skill: .claude/skills/session-journal/SKILL.md
